@@ -1,5 +1,5 @@
 # jobsystem-server
-2020-2021课程设计-后端 基于express+mysql
+使用 express + mysql 构建的求职平台后端
 ## Project setup
 ```
 npm install
