@@ -7,6 +7,7 @@ var jwp = require('express-jwt');
 var timeTool = require('../myTools/getDateTime');
 const { resolvePtr } = require('dns');
 const { token } = require('morgan');
+const { uptime } = require('process');
 
 const jwtMW = jwp({
   secret: 'cqupt',
@@ -412,9 +413,10 @@ router.post('/newJob', jwtMW, (req, res) => {
         let diploma = body.diploma
         let exp = body.exp
         let description = body.description
+        let upTime = timeTool.getDateTime()
         let skills = body.skills
-        let sql = `insert into jobs(cid, jobname, salary, city, diploma, exp, description, uid,skills)`
-        +` values(${cid}, "${jobname}", "${salary}", "${city}", "${diploma}", "${exp}", "${description}", ${uid}, "${skills}")`
+        let sql = `insert into jobs(cid, jobname, salary, city, diploma, exp, description, uid,skills,upTime)`
+        +` values(${cid}, "${jobname}", "${salary}", "${city}", "${diploma}", "${exp}", "${description}", ${uid}, "${skills}", "${upTime}")`
         db.query(sql, (err, result) => {
           if(err) throw err
           let response = {
@@ -483,6 +485,23 @@ router.post('/removeJob', jwtMW, (req, res) => {
     let response = {
       code: 0,
       data: result
+    }
+    res.send(JSON.stringify(response))
+  })
+})
+
+//投递
+router.post('/sendResume', jwtMW, (req, res) => {
+
+  let rid = req.body.rid
+  let uid = req.body.uid
+  let jid = req.body.jid
+  let cn = req.body.companyName
+  let sql = `update resume set sended=1,toUid=${uid},jid=${jid},companyName="${cn}" where rid=${rid}`
+  db.query(sql, (err, result) => {
+    if(err) throw err
+    let response = {
+      code: 0
     }
     res.send(JSON.stringify(response))
   })

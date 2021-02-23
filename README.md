@@ -6,6 +6,11 @@ npm install
 ```
 ## Compiles and hot-reloads for development
 
+### Keep server running when it fails:
+```
+pm2
+```
+### Only for hot-reloads:
 ```
 nodemon
 ```
