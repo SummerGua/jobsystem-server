@@ -3,7 +3,7 @@
 /**
  * Module dependencies.
  */
-
+var socketio = require('socket.io')
 var app = require('../app');
 var debug = require('debug')('myapp:server');
 var http = require('http');
@@ -20,6 +20,8 @@ app.set('port', port);
  */
 
 var server = http.createServer(app);
+var io = socketio(server)
+app.io(io)
 
 /**
  * Listen on provided port, on all network interfaces.
