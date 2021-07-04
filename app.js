@@ -18,13 +18,14 @@ app.all('*', (req, res, next) => {
   next()
 })
 
-var router = require('./routes/sth')
+var router = require('./routes/socketConnect')
 app.io = router.io
 
 //路由信息
 var indexRouter = require('./routes/index')
 var usersRouter = require('./routes/users')
 var publicRouter = require('./routes/public')
+var bbsRouter = require('./routes/bbs')
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'))
@@ -45,6 +46,7 @@ app.use(express.static(path.join(__dirname, 'public')))//默认
 app.use('/', indexRouter)
 app.use('/users', usersRouter)
 app.use('/public', publicRouter)
+app.use('/bbs',bbsRouter)
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {

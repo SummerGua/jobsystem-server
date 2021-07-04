@@ -1,13 +1,11 @@
-var express = require('express');
-var router = express.Router();
-var URL = require('url')
-var db = require('../database')
-var tokenHandler = require('../token')
-var jwp = require('express-jwt');
-var timeTool = require('../myTools/getDateTime');
-const { resolvePtr } = require('dns');
-const { token } = require('morgan');
-const { uptime } = require('process');
+const express = require('express')
+const router = express.Router()
+const URL = require('url')
+const db = require('../database')
+const tokenHandler = require('../token')
+const jwp = require('express-jwt')
+const timeTool = require('../myTools/getDateTime')
+const { makeResponse } = require('./utils/utils')
 
 const jwtMW = jwp({
   secret: 'cqupt',
@@ -15,13 +13,13 @@ const jwtMW = jwp({
 })
 /* GET users listing. */
 router.get('/',jwtMW, (req, res) => { //使用中间件
-  res.send('respond with a resource');
-});
+  res.send('respond with a resource')
+})
 
 router.post('/login', (req, res) => {
   let name = req.body.name
   let password = req.body.password
-  db.query(`select password,realName,isStu,uid from user where name = '${name}'`, function(err,result){ //注意这个引号
+  db.query(`select password,name,isStu,uid from users where name = '${name}'`, (err,result) => { //注意这个引号
     if(err) throw err
     let response = {
       code: 0, 
@@ -33,7 +31,8 @@ router.post('/login', (req, res) => {
     else {
       if(password==info.password) { //若成功返回这些信息
         tokenHandler.setToken(info.uid).then(token=>{
-          response.name = info.realName
+          
+          response.name = info.name
           response.isStu = info.isStu
           response.uid = info.uid
           response.token = 'Bearer ' + token
@@ -48,12 +47,11 @@ router.post('/login', (req, res) => {
 })
 
 router.post('/signup',(req, res) => {
-  let name = req.body.name
-  let isStu = req.body.isStu
-  let password = req.body.password //这边以后要加密
-  let realName = req.body.realName
-  let companyName = req.body.companyName
-  db.query(`select * from user where name = '${name}'`, (err,result) => {
+  // password记得加密
+  let {
+    name, isStu, password, realName, companyName
+  } = req.body
+  db.query(`select * from users where name = '${name}'`, (err,result) => {
     if(err) throw err
     if(result&&result.length !== 0) {
       res.send(JSON.stringify({code: 1, data: '用户名已存在'}))
@@ -61,14 +59,52 @@ router.post('/signup',(req, res) => {
     else{
       let sql = `insert into user(name,isStu,password,realName,companyName) `
       +`values("${name}","${isStu}","${password}","${realName}","${companyName}")`
-      db.query(sql,function(err,result){
+      db.query(sql, (err,result) => {
           if(err) throw err
-          let response = {code: 0,data: '注册成功'}
-          res.send(JSON.stringify(response))
+          res.send(makeResponse('注册成功'))
         }
       )
   }
   })
+})
+
+router.post('/changePassword', jwtMW, (req, res) => {
+  tokenHandler.verifyToken(req.headers.authorization).then(
+    info => {
+      let { uid } = info 
+      let { oldPwd, newPwd } = req.body
+      let checkSql = `select password from users where uid=${uid}`
+      db.query(checkSql, (err, result) => {
+        if(err) throw err
+        if(result[0].password !== oldPwd) {
+          res.send(JSON.stringify({code: 1, data: '原有密码输入错误'}))
+        }
+        else {
+          let sql = `update password set name='${newPwd}' where uid = ${uid}`
+          db.query(sql, (err, result) => {
+            if(err) throw err
+            res.send(makeResponse('ok'))
+          })
+        }
+      })
+      
+    }
+  )
+})
+
+router.post('/changeName', jwtMW, (req, res) => {
+  tokenHandler.verifyToken(req.headers.authorization).then(
+    info => {
+      let { uid } = info
+      let { name } = req.body
+      let sql = `update users set name='${name}' where uid = ${uid}`
+      db.query(sql, (err, result) => {
+        if(err) throw err
+        res.send(makeResponse('ok'))
+
+      })
+    }
+  )
 })
 
 router.post('/saveResume', jwtMW, (req, res) => {
@@ -77,21 +113,16 @@ router.post('/saveResume', jwtMW, (req, res) => {
       let uid = info.uid //token里的
       let data = req.body //请求体中的数据
       let upTime = timeTool.getDateTime()
-      let job = data.job
       let companyName = ''
       if(data.companyName) {
         companyName = data.companyName
       }
       let progress = 0
-      let name = data.name
-      let tele = data.tele
-      let email = data.email
-      let sex = data.sex
+      let {
+        name, tele, email, sex, job,
+        salary, city, diploma, evaluation
+      } = data
       let birthday = data.birthday.split('T')[0]
-      let salary = data.salary
-      let city = data.city
-      let diploma = data.diploma
-      let evaluation = data.evaluation
       let eduinfos = []
       let workExps = []
       let skills = ''
@@ -197,10 +228,9 @@ router.post('/saveResume', jwtMW, (req, res) => {
       +`"${projects[4][0]}","${projects[4][1]}","${projects[4][2]}",`
       +`"${projects[5][0]}","${projects[5][1]}","${projects[5][2]}",`
       +`"${projects[6][0]}","${projects[6][1]}","${projects[6][2]}"` + `)`
-      db.query(sql,function(err,result){
+      db.query(sql, (err,result) => {
         if(err) throw err
-        let response = {code: 0,data: 'submit success'}
-        res.send(JSON.stringify(response))
+        res.send(makeResponse('submit success'))
       })
     }
   )
@@ -213,16 +243,11 @@ router.get('/getShortResume', jwtMW, (req, res) => {
         let sql = `select rid,sended,companyName,job,type,progress,upTime,sended from resume where uid=${uid} order by upTime desc`
         db.query(sql, (err, result) => {
           if(err) throw err
-          let response = {
-            code: 0,
-            data: undefined
-          }
           if(result.length==0||!result) {
-            response.data = 'no data'
-            res.send(JSON.stringify(response))
+            res.send(makeResponse('no data'))
           }else{
-            response.data = result
-            res.send(JSON.stringify(response))
+
+            res.send(makeResponse(result))
           }
         })
       }
@@ -249,14 +274,10 @@ router.get('/getMessageSenders', jwtMW, (req, res) => {
             }
           }
           senderId = Array.from(new Set(senderId)) //去重防止意外情况
-          let findPic = `select realName,pic,uid from user where uid in (${senderId})` //注意这种SQL方法非常巧妙
+          let findPic = `select realName,pic,uid,name from users where uid in (${senderId})` //注意这种SQL方法非常巧妙
           db.query(findPic, (err, picResult) => {
             if(err) throw err
-            let response = {
-              code: 0,
-              data: picResult
-            }
-            res.send(JSON.stringify(response))
+            res.send(makeResponse(picResult))
           })
           
         }
@@ -268,18 +289,13 @@ router.get('/getMessageSenders', jwtMW, (req, res) => {
 router.post('/sendMessage', jwtMW, (req, res) => {
   tokenHandler.verifyToken(req.headers.authorization).then(
     info => {
-      const fromUid = info.uid
-      const toUid = req.body.toUid
-      let message = req.body.message
+      const { uid } = info
+      let { toUid, message } = req.body
       let datetime = timeTool.getDateTime()
-      let sendSql = `insert into message(fromUid,toUid,time,message) values(${fromUid},${toUid},"${datetime}","${message}")`
+      let sendSql = `insert into message(fromUid,toUid,time,message) values(${uid},${toUid},"${datetime}","${message}")`
       db.query(sendSql, (err, result) => {
         if(err) throw err
-        let response = {
-          code: 0,
-          data: 'send success'
-        }
-        res.send(JSON.stringify(response))
+        res.send(makeResponse('send success'))
       })
     }
   )
@@ -289,7 +305,7 @@ router.post('/getMessage', jwtMW, (req, res) =>{
   tokenHandler.verifyToken(req.headers.authorization).then(
     info => {
       let myuid = info.uid //获取登陆者uid
-      let hisuid = req.body.hisuid
+      let { hisuid } = req.body
       let sql = `select message,time,fromUid from message where (fromUid="${myuid}" and toUid="${hisuid}") or (fromUid="${hisuid}" and toUid="${myuid}") order by time`
         db.query(sql, (err, result) => {
           if(err) throw err
@@ -302,8 +318,7 @@ router.post('/getMessage', jwtMW, (req, res) =>{
             response.data = ''
             res.send(JSON.stringify(response))
           }else{
-            response.data = result
-            res.send(JSON.stringify(response))
+            res.send(makeResponse(result))
           }
        })
      }
@@ -313,15 +328,11 @@ router.post('/getMessage', jwtMW, (req, res) =>{
 router.get('/getFullResume', jwtMW, (req, res) => {
   tokenHandler.verifyToken(req.headers.authorization).then(
     info => {
-      let rid = req.query.rid
+      let { rid } = req.query
       let sql = `select * from resume where rid="${rid}"`
       db.query(sql, (err, result) => {
         if(err) throw err
-        let response = {
-          code: 0,
-          data: result,
-        }
-        res.send(JSON.stringify(response))
+        res.send(makeResponse(result))
       })
     }
   )
@@ -330,7 +341,7 @@ router.get('/getFullResume', jwtMW, (req, res) => {
 router.get('/getReceivedResume', jwtMW, (req, res) => {
   tokenHandler.verifyToken(req.headers.authorization).then(
     info => {
-      let uid = info.uid
+      let { uid } = info
       let sql = `select * from resume where touid="${uid}" and progress=0`
       db.query(sql, (err, result) => {
         if(err) throw err
@@ -348,16 +359,12 @@ router.get('/getReceivedResume', jwtMW, (req, res) => {
 router.post('/dropResume', jwtMW, (req, res) => {
   tokenHandler.verifyToken(req.headers.authorization).then(
     info => {
-      let uid = info.uid
-      let rid = req.body.rid
+      let { uid } = info
+      let { rid } = req.body
       let sql = `update resume set progress=1 where toUid=${uid} and rid=${rid}`
       db.query(sql, (err, result) => {
         if(err) throw err
-        let response = {
-          code: 0,
-          data: 'success'
-        }
-        res.send(JSON.stringify(response))
+        res.send(makeResponse('success'))
       })
     }
   )
@@ -366,16 +373,12 @@ router.post('/dropResume', jwtMW, (req, res) => {
 router.post('/wantResume', jwtMW, (req, res) => {
   tokenHandler.verifyToken(req.headers.authorization).then(
     info => {
-      let uid = info.uid
-      let rid = req.body.rid
+      let { uid } = info
+      let { rid } = req.body
       let sql = `update resume set progress=2 where toUid=${uid} and rid=${rid}`
       db.query(sql, (err, result) => {
         if(err) throw err
-        let response = {
-          code: 0,
-          data: 'success'
-        }
-        res.send(JSON.stringify(response))
+        res.send(makeResponse('success'))
       })
     }
   )
@@ -384,15 +387,11 @@ router.post('/wantResume', jwtMW, (req, res) => {
 router.get('/getProcessedResumes', jwtMW, (req, res) => {
   tokenHandler.verifyToken(req.headers.authorization).then(
     info => {
-      let uid = info.uid
+      let { uid } = info
       let sql = `select * from resume where progress <> 0 and toUid=${uid}`
       db.query(sql, (err,result) => {
         if(err) throw err
-        let response = {
-          code: 0,
-          data: result
-        }
-        res.send(JSON.stringify(response))
+        res.send(makeResponse(result))
       })
     }
   )
@@ -401,29 +400,22 @@ router.get('/getProcessedResumes', jwtMW, (req, res) => {
 router.post('/newJob', jwtMW, (req, res) => {
   tokenHandler.verifyToken(req.headers.authorization).then(
     info => {
-      let uid = info.uid
-      let sql_one = `select cid from user where uid = ${uid}`
+      let { uid } = info
+      let sql_one = `select cid from users where uid = ${uid}`
       db.query(sql_one, (err, result) => {
         if(err) throw err
-        let cid = result[0].cid
-        let body = req.body
-        let jobname = body.jobname
-        let salary = body.salary
-        let city = body.city
-        let diploma = body.diploma
-        let exp = body.exp
-        let description = body.description
+        let { body } = req
+        let {
+          jobname, salary, city, 
+          diploma, exp, description, skills
+        } = body
         let upTime = timeTool.getDateTime()
-        let skills = body.skills
+        let { cid } = result[0]
         let sql = `insert into jobs(cid, jobname, salary, city, diploma, exp, description, uid,skills,upTime)`
         +` values(${cid}, "${jobname}", "${salary}", "${city}", "${diploma}", "${exp}", "${description}", ${uid}, "${skills}", "${upTime}")`
         db.query(sql, (err, result) => {
           if(err) throw err
-          let response = {
-            code: 0,
-            data: result
-          }
-          res.send(JSON.stringify(response))
+          res.send(makeResponse(result))
         })
       })
     }
@@ -433,11 +425,11 @@ router.post('/newJob', jwtMW, (req, res) => {
 router.post('/confirmComCode', jwtMW, (req, res) => {
   tokenHandler.verifyToken(req.headers.authorization).then(
     info => {
-      let uid = info.uid
-      let sql_one = `select cid from user where uid = ${uid}`
+      let { uid } = info
+      let sql_one = `select cid from users where uid = ${uid}`
       db.query(sql_one, (err, result) => {
         if(err) throw err
-        let cid = result[0].cid
+        let { cid } = result[0]
         let sql_two = `select code from companyinfo where cid = ${cid}`
         db.query(sql_two, (err, result) => {
           if(err) throw err
@@ -446,8 +438,7 @@ router.post('/confirmComCode', jwtMW, (req, res) => {
             data: ''
           }
           if(req.body.code==result[0].code){
-            response.data = 'success'
-            res.send(JSON.stringify(response))
+            res.send(makeResponse('success'))
           }else{
             response.code = 1
             response.data = 'wrong code'
@@ -463,48 +454,66 @@ router.post('/confirmComCode', jwtMW, (req, res) => {
 router.get('/getJobs', jwtMW, (req, res) => {
   tokenHandler.verifyToken(req.headers.authorization).then(
     info => {
-      let uid = info.uid
+      let { uid } = info
       let sql = `select * from jobs where uid = ${uid}`
       db.query(sql, (err, result) => {
         if(err) throw err
-        let response = {
-          code: 0,
-          data: result
-        }
-        res.send(JSON.stringify(response))
+        res.send(makeResponse(response))
       })
     }
   )
 })
 
 router.post('/removeJob', jwtMW, (req, res) => {
-  let jid = req.body.jid
+  let { jid } = req.body
   let sql = `delete from jobs where jid = ${jid}`
   db.query(sql, (err, result) => {
     if(err) throw err
-    let response = {
-      code: 0,
-      data: result
-    }
-    res.send(JSON.stringify(response))
+    res.send(makeResponse(result))
   })
 })
 
 //投递
 router.post('/sendResume', jwtMW, (req, res) => {
-
-  let rid = req.body.rid
-  let uid = req.body.uid
-  let jid = req.body.jid
-  let cn = req.body.companyName
+  let { rid, uid, jid, cn} = req.body
   let sql = `update resume set sended=1,toUid=${uid},jid=${jid},companyName="${cn}" where rid=${rid}`
   db.query(sql, (err, result) => {
     if(err) throw err
-    let response = {
-      code: 0
-    }
-    res.send(JSON.stringify(response))
+    res.send(makeResponse('success'))
   })
+})
+
+const fs = require('fs')
+const formidable = require('formidable')
+const path = require('path')
+//上传图片
+router.post('/uploadPic',jwtMW,  (req, res) => {
+  tokenHandler.verifyToken(req.headers.authorization).then(
+    info => {
+      const form = new formidable.IncomingForm()
+      form.keepExtensions=true
+      let oldPath = path.resolve(__dirname + '../../public/avators/')
+      form.uploadDir = oldPath
+      let newPath = oldPath+'/'+info.uid+'.jpg'
+      let sql = `update users set pic='http://localhost:3000/avators/${info.uid}.jpg' where uid=${info.uid}`
+      form.parse(req, function (err, fields, files) {
+        if (err) {
+          res.send('-1')
+        }
+        fs.rename(files.file.path, newPath, err => {
+          if(err) throw err
+        })
+        db.query(sql, (err, result) => {
+          if(err) throw err
+          res.send(makeResponse('ok'))
+        })
+      })
+      
+    }
+
+     
+    
+  )
 })
 
 module.exports = router;
